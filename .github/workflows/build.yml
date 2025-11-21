@@ -1,0 +1,72 @@
+name: Build Windows x64
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  pull_request:
+    branches: [ "main", "master" ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    
+    steps:
+    # 1. Setup Vulkan SDK (Required for nvpro samples)
+    - name: Setup Vulkan SDK
+      uses: lunarg/setup-vulkan-sdk@v1
+      with:
+        vulkan-query-version: 1.3.268.0
+        vulkan-components: Vulkan-Headers, Vulkan-Loader
+        vulkan-use-cache: true
+
+    # 2. Checkout the main repository into a specific path
+    # nvpro samples expect the structure:
+    #   /workspace/vk_gltf_renderer
+    #   /workspace/nvpro_core2
+    - name: Checkout vk_gltf_renderer
+      uses: actions/checkout@v4
+      with:
+        path: vk_gltf_renderer
+        submodules: recursive
+
+    # 3. Checkout the dependency nvpro_core2 into a sibling path
+    - name: Checkout nvpro_core2
+      uses: actions/checkout@v4
+      with:
+        repository: nvpro-samples/nvpro_core2
+        path: nvpro_core2
+        submodules: recursive
+
+    # 4. Configure CMake
+    # We point -S to the vk_gltf_renderer folder. 
+    # CMake will look for ../nvpro_core2 automatically.
+    - name: Configure CMake
+      run: >
+        cmake -S vk_gltf_renderer -B build 
+        -D CMAKE_BUILD_TYPE=Release
+        -D USE_DRACO=ON
+
+    # 5. Build the project
+    - name: Build
+      run: cmake --build build --config Release --parallel
+
+    # 6. Upload Artifacts
+    # NVIDIA samples usually output binaries to a "_bin" or "bin" folder 
+    # inside the source directory, or inside the build directory depending on config.
+    # We try to capture the likely locations.
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: vk_gltf_renderer-win-x64
+        if-no-files-found: warn
+        path: |
+          vk_gltf_renderer/_bin/
+          vk_gltf_renderer/bin/
+          build/bin/
+          build/Release/
+          !build/**/*.obj
+          !build/**/*.iobj
+          !build/**/*.ipdb
+          !build/**/*.pdb
+          !build/**/*.tlog
